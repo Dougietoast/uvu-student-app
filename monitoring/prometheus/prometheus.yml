@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  # Prometheus monitoring itself (from the previous assignment)
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The VM itself: CPU, memory, disk, network
+  - job_name: node
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+        labels:
+          instance: student-app-vm
+
+  # The blackbox exporter's own health
+  - job_name: blackbox
+    static_configs:
+      - targets: ["blackbox:9115"]
+
+  # HTTP probes of the student app, run through the blackbox exporter
+  - job_name: student-app-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://student-app:3000/
+          - http://student-app:3000/student.json
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

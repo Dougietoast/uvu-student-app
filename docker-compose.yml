@@ -1,0 +1,69 @@
+# Student app + monitoring stack (IT 3200)
+# Start everything:  docker compose up -d --build
+services:
+  # The React app from M6, built from the Dockerfile in this repo
+  student-app:
+    build: .
+    container_name: student-app
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # Collects and stores metrics, evaluates alert rules
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets Prometheus reach node-exporter on the host
+    restart: unless-stopped
+
+  # Exposes the VM's CPU, memory, disk, and network metrics
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    container_name: node-exporter
+    command:
+      - --path.rootfs=/host
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+
+  # Probes the student app over HTTP like a user would (up/down, latency, status code)
+  blackbox:
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: blackbox
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./monitoring/blackbox:/etc/blackbox:ro
+    restart: unless-stopped
+
+  # Dashboards on top of Prometheus
+  grafana:
+    image: grafana/grafana:13.2.3
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:
